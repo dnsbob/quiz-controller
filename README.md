@@ -1,4 +1,4 @@
-``
+~~~
 # quiz-controller
 quiz controller for AWANA Bible drill
 
@@ -27,5 +27,5 @@ Display:
 [Colors later]
 
 [Display on projectors?]
-``
+~~~
 
