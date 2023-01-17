@@ -7,6 +7,7 @@ quiz controller, text version
 
 import time
 import serial
+import re
 
 # from https://stackoverflow.com/questions/2408560/non-blocking-console-input
 import sys
@@ -67,13 +68,14 @@ def main():
     enable=[]   # enable status of player
     for i in range(max):
         print("player",i,"is key",keys[i])
-        player.append(False)    # false=seated, true=standing
+        player.append(True)    # True=seated, False=standing
         enable.append(True)
-
+    stand=[]    # ordered list of players that stood up
+    standing=-1
 
 
     # test
-    player[3]=1
+    #player[3]=1
 
     # main loop
     with NonBlockingConsole() as nbc:
@@ -82,16 +84,42 @@ def main():
                 # read controller
                 c=myusb.get_data()
                 if c:
+                    s=c.decode()
                     print(f"from controller:{c}:")
-                # print
+                    m=re.match(r'pin (\d+) (True|False) ',s)
+                    pin=int(m[1])
+                    state=eval(m[2])
+                    if m:
+                        print(f'pin={pin},state={state}')
+                    else:
+                        print('not decoded')
+                    if player[pin] == state:
+                        print('no change')
+                    else:
+                        player[pin]=state
+                        if state == False:
+                            stand.append(pin)
+                        else:
+                            try:
+                                stand.remove(pin)
+                            except ValueError as e:
+                                print(f'error - {pin} not in {stand}')
+                    if len(stand) > 0:
+                        standing=stand[0]
+                    else:
+                        standing=-1
+                    print(f'stand: {stand}, standing: {standing}')
+                # print the main output line
                 print("\r",end="")
                 for i in range(max):
                     playernum=i+1
-                    if enable[i]:
+                    if i == standing:
+                        symbol="*"
+                    elif enable[i]:
                         if player[i]:
-                            symbol="*"
-                        else:
                             symbol=" "
+                        else:
+                            symbol="."
                     else:
                         symbol="_"
                     print(f" {symbol}{playernum}{symbol} ",end="")
@@ -112,8 +140,8 @@ def main():
                         else:
                             enable[j]=True
                     elif j<2*max:
-                        # pretend seat went True
-                        player[j-max]=True
+                        # pretend seat went False (standing)
+                        player[j-max]=False
                 time.sleep(.1)
 
 
