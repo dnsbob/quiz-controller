@@ -107,14 +107,16 @@ def main():
                     m=re.match(r'pin (\d+) (True|False) ',s)
                     pin=int(m[1])
                     state=eval(m[2])
+                    if state:
+                        pos="seated"
+                    else:
+                        pos="STANDING"
                     if m:
-                        print(f'player={pin+1},state={state}')
+                        print(f'player {pin+1} {pos}')
                         print() # blank line
                     else:
                         print('not decoded')
-                    if player[pin] == state:
-                        print('no change')
-                    else:
+                    if player[pin] != state:
                         player[pin]=state
                     standing=chkstand(pin,state,enable[pin],stand,standing)
                     #print(f'stand: {stand}, standing: {standing}')
@@ -136,7 +138,7 @@ def main():
                     else:
                         symbol="_"
                     print(f" {symbol}{playernum}{symbol} ",end="")
-                print(f'    first: {standing}   standing: {stand},   ',end="")
+                print(f'    first: {standing}   standing: {stand}   ',end="")
                 #print()
 
                 # read keyboard
