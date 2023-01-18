@@ -3,8 +3,6 @@
 quiz controller, text version
 '''
 
-############# ***** NEXT - DECIPHER CONTROLLER INPUT ****
-
 import time
 import serial
 import re
@@ -67,15 +65,12 @@ def main():
     player=[]   # list of player status
     enable=[]   # enable status of player
     for i in range(max):
-        print("player",i,"is key",keys[i])
+        print(f"player{i+1}is key{keys[i]}")
         player.append(True)    # True=seated, False=standing
         enable.append(True)
     stand=[]    # ordered list of players that stood up
     standing=-1
 
-
-    # test
-    #player[3]=1
 
     # main loop
     with NonBlockingConsole() as nbc:
@@ -90,7 +85,7 @@ def main():
                     pin=int(m[1])
                     state=eval(m[2])
                     if m:
-                        print(f'pin={pin},state={state}')
+                        print(f'player={pin+1},state={state}')
                     else:
                         print('not decoded')
                     if player[pin] == state:
@@ -98,22 +93,25 @@ def main():
                     else:
                         player[pin]=state
                         if state == False:
-                            stand.append(pin)
+                            stand.append(pin+1)
                         else:
                             try:
-                                stand.remove(pin)
+                                stand.remove(pin+1)
                             except ValueError as e:
-                                print(f'error - {pin} not in {stand}')
+                                print(f'error - {pin+1} not in {stand}')
                     if len(stand) > 0:
                         standing=stand[0]
                     else:
                         standing=-1
                     print(f'stand: {stand}, standing: {standing}')
+
+                else:
+                    time.sleep(.1)  # only sleep if no input
                 # print the main output line
                 print("\r",end="")
                 for i in range(max):
                     playernum=i+1
-                    if i == standing:
+                    if playernum == standing:
                         symbol="*"
                     elif enable[i]:
                         if player[i]:
@@ -124,6 +122,7 @@ def main():
                         symbol="_"
                     print(f" {symbol}{playernum}{symbol} ",end="")
                 #print()
+
                 # read keyboard
                 c=nbc.get_data()
                 if c:
@@ -140,9 +139,21 @@ def main():
                         else:
                             enable[j]=True
                     elif j<2*max:
-                        # pretend seat went False (standing)
-                        player[j-max]=False
-                time.sleep(.1)
+                        # toggle seat value - for testing
+                        if player[j-max]:
+                            player[j-max]=False
+                        else:
+                            player[j-max]=True
+                    elif c==" ":
+                        for j in range(max):
+                            player[j]=True
+                        stand=[]
+                        print("reset")
+                    elif c=="\n":
+                        '''enter is go button'''
+                        stand=[]
+                    else:
+                        print(f"char not found:{c}")
 
 
 if __name__ == "__main__":
