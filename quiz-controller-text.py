@@ -35,6 +35,7 @@ class Usbserial(object):
         # serial setup
         SERIALPORT = "/dev/ttyACM0"
         BAUDRATE = 115200
+        self.buf=b""
         while True:
             try:
                 self.ser = serial.Serial(SERIALPORT, BAUDRATE)
@@ -53,8 +54,30 @@ class Usbserial(object):
     def get_data(self):
         cnt=self.ser.in_waiting
         if cnt:
-            return self.ser.readline(cnt)
+            self.buf=self.buf+self.ser.readline(cnt)
+            if b"\n" in self.buf:
+                i=self.buf.index(b"\n")
+                line=self.buf[0:i+1]
+                self.buf=self.buf[i+1:]
+                return line
         return None
+
+
+def chkstand(pin,state,enable,stand,standing):
+    '''update stand list'''
+    if state == False and enable == True:
+        stand.append(pin+1)
+    else:
+        try:
+            stand.remove(pin+1)
+        except ValueError as e:
+            pass   # this is expected
+            #print(f'error - {pin+1} not in {stand}')
+    if len(stand) > 0:
+        standing=stand[0]
+    else:
+        standing=-1
+    return standing
 
 
 def main():
@@ -65,7 +88,7 @@ def main():
     player=[]   # list of player status
     enable=[]   # enable status of player
     for i in range(max):
-        print(f"player{i+1}is key{keys[i]}")
+        print(f"player {i+1} is key {keys[i]}")
         player.append(True)    # True=seated, False=standing
         enable.append(True)
     stand=[]    # ordered list of players that stood up
@@ -80,33 +103,25 @@ def main():
                 c=myusb.get_data()
                 if c:
                     s=c.decode()
-                    print(f"from controller:{c}:")
+                    #print(f"from controller:{c}:")
                     m=re.match(r'pin (\d+) (True|False) ',s)
                     pin=int(m[1])
                     state=eval(m[2])
                     if m:
                         print(f'player={pin+1},state={state}')
+                        print() # blank line
                     else:
                         print('not decoded')
                     if player[pin] == state:
                         print('no change')
                     else:
                         player[pin]=state
-                        if state == False:
-                            stand.append(pin+1)
-                        else:
-                            try:
-                                stand.remove(pin+1)
-                            except ValueError as e:
-                                print(f'error - {pin+1} not in {stand}')
-                    if len(stand) > 0:
-                        standing=stand[0]
-                    else:
-                        standing=-1
-                    print(f'stand: {stand}, standing: {standing}')
+                    standing=chkstand(pin,state,enable[pin],stand,standing)
+                    #print(f'stand: {stand}, standing: {standing}')
 
                 else:
                     time.sleep(.1)  # only sleep if no input
+
                 # print the main output line
                 print("\r",end="")
                 for i in range(max):
@@ -121,6 +136,7 @@ def main():
                     else:
                         symbol="_"
                     print(f" {symbol}{playernum}{symbol} ",end="")
+                print(f'    first: {standing}   standing: {stand},   ',end="")
                 #print()
 
                 # read keyboard
@@ -138,6 +154,9 @@ def main():
                             enable[j]=False
                         else:
                             enable[j]=True
+                        #print(f"pin {j} state {player[j]} enable {enable[j]} stand {stand}")
+                        standing=chkstand(j,player[j],enable[j],stand,standing)
+                        #print(f'stand: {stand}, standing: {standing}')
                     elif j<2*max:
                         # toggle seat value - for testing
                         if player[j-max]:
@@ -151,7 +170,7 @@ def main():
                         print("reset")
                     elif c=="\n":
                         '''enter is go button'''
-                        stand=[]
+                        #stand=[]
                     else:
                         print(f"char not found:{c}")
 
