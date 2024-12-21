@@ -6,6 +6,7 @@ quiz controller, text version
 import time
 import serial
 import re
+from pygame import mixer
 
 # from https://stackoverflow.com/questions/2408560/non-blocking-console-input
 import sys
@@ -83,6 +84,9 @@ def chkstand(pin,state,enable,stand,standing):
 def main():
     '''quiz-controller-text'''
     # setup
+    mixer.init()
+    sound=mixer.Sound("beep-2.wav")
+    sound.play()
     keys="1234567890!@#$%^&*() \n<>,."
     max=10 # update keys above if this changes
     player=[]   # list of player status
@@ -99,6 +103,7 @@ def main():
     with NonBlockingConsole() as nbc:
         with Usbserial() as myusb:
             while True:
+                beep=False
                 # read controller
                 c=myusb.get_data()
                 if c:
@@ -118,10 +123,14 @@ def main():
                         print('not decoded')
                     if player[pin] != state:
                         player[pin]=state
+                        if pos == "STANDING":
+                            beep=True
                     standing=chkstand(pin,state,enable[pin],stand,standing)
                     #print(f'stand: {stand}, standing: {standing}')
 
                 else:
+                    if beep:
+                        sound.play()
                     time.sleep(.1)  # only sleep if no input
 
                 # print the main output line
