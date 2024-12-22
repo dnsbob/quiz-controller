@@ -66,6 +66,7 @@ class Usbserial(object):
 
 def chkstand(pin,state,enable,stand,standing):
     '''update stand list'''
+    #print(f"chkstand pin={pin} sit={state} enable={enable}") ## debug
     if state == False and enable == True:
         stand.append(pin+1)
     else:
@@ -75,10 +76,10 @@ def chkstand(pin,state,enable,stand,standing):
             pass   # this is expected
             #print(f'error - {pin+1} not in {stand}')
     if len(stand) > 0:
-        standing=stand[0]
+        newstanding=stand[0]
     else:
-        standing=-1
-    return standing
+        newstanding=-1
+    return newstanding
 
 
 def main():
@@ -108,7 +109,7 @@ def main():
                 c=myusb.get_data()
                 if c:
                     s=c.decode()
-                    #print(f"from controller:{c}:")
+                    #print(f"from controller:{c}:")  ## debug
                     m=re.match(r'pin (\d+) (True|False) ',s)
                     pin=int(m[1])
                     state=eval(m[2])
@@ -118,7 +119,7 @@ def main():
                         pos="STANDING"
                     if m:
                         print(f'player {pin+1} {pos}')
-                        print() # blank line
+                        #print() # blank line
                     else:
                         print('not decoded')
                     if player[pin] != state:
@@ -138,14 +139,14 @@ def main():
                 for i in range(max):
                     playernum=i+1
                     if playernum == standing:
-                        symbol="*"
+                        symbol="*"  # the first one standing currently
                     elif enable[i]:
                         if player[i]:
-                            symbol=" "
+                            symbol=" "  # seated - number toggles enable
                         else:
-                            symbol="."
+                            symbol="."  # standing but not first
                     else:
-                        symbol="_"
+                        symbol="_" # disabled - number toggles enable
                     print(f" {symbol}{playernum}{symbol} ",end="")
                 print(f'    first: {standing}   standing: {stand}   ',end="")
                 #print()
@@ -174,10 +175,12 @@ def main():
                             player[j-max]=False
                         else:
                             player[j-max]=True
+                        standing=chkstand(j-max,player[j-max],enable[j-max],stand,standing)
                     elif c==" ":
                         for j in range(max):
                             player[j]=True
                         stand=[]
+                        standing=-1
                         print("reset")
                     elif c=="\n":
                         '''enter is go button'''
