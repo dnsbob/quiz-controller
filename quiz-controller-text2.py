@@ -15,14 +15,8 @@ import tty
 import termios
 
 # global vars
-bouncetime=.5  # debounce players and switches until no change for bounce time
-positions={True: 'seated', False: 'STANDING'}
-bounceend=0    # end of bounce for first player in bouncelist, or zero if list is empty
-players={}
-debug=0
-readytime=0
-readywait=2 # all players seated for this long to play ready sound
-timenow=0
+bouncetime=2  # debounce players and switches until no change for bounce time (.2)
+bouncechk=1  # how often to check for bounce end (.1)
 
 class NonBlockingConsole(object):
 
@@ -76,21 +70,19 @@ class Usbserial(object):
 
 def chkstand(state,standlist,player):
     '''update 'standlist' list of who is standing and in what order, also returns the first person'''
-    if debug:
-        print(f" chkstand state={state} standlist={standlist} player={player}") ## debug
-    global readytime
-    global timenow
-    playernum=player['playernum']
+    print(f" chkstand state={state} standlist={standlist} player={player}") ## debug
+    pin=player['pin']
+    playernum=pin+1
     enable=player['enable']
     if state == False and enable == True:
         if playernum not in standlist:
             standlist.append(playernum)
-            readytime=0
     else:
-        if playernum in standlist:
+        try:
             standlist.remove(playernum)
-            if not standlist:   # list just became empty
-                readytime=timenow + readywait
+        except ValueError as e:
+            pass   # this is expected
+            #print(f' error - {pin+1} not in {standlist}')
     if len(standlist) > 0:
         newstanding=standlist[0]
     else:
@@ -99,79 +91,61 @@ def chkstand(state,standlist,player):
 
 
 def updplayer(state,timenow,beep,player,bouncelist):
-    '''update player and bouncelist, return beep'''
-    playernum=player['playernum']
-    oldsit=player['sit'] # players current debounced state
-    oldsitnew=player['sitnew'] # players current actual state
-    global bounceend
-    global players
-    if debug:
-        print(f"  updplayer state {state}  timenow {timenow:.2f} {player} ")
-    if player['sitnew'] != state:   # update sitnew, always the current position
-        player['sitnew']=state
-        #print(f"in updplayer, {player}")
-    if timenow == 0:
-        print(f" FAILED - time is zero  ")
-    if timenow > player['lastchg'] + bouncetime: # not bouncing
+    '''update player'''
+    pin=player['pin']
+    playernum=pin+1
+    oldstate=player['sit'] # players current debounced state
+    if state:
+        pos="seated"
+    else:
+        pos="STANDING"
+    if timenow > 0:
+        print(f' player {playernum} {pos}')
+        if player['sitnew'] != state:
+            player['sitnew']=state
+            #print(f"in updplayer, {player}")
+            if timenow > player['lastchg'] + bouncetime:
+                player['sit']=player['sitnew']
+            else:
+                if playernum not in bouncelist:
+                    bouncelist.append(playernum)
+            player['lastchg'] = timenow
+    else: # timenow=0
         player['sit']=player['sitnew']
-        print(f"  player {playernum} now {positions[state]}  stable")
         if playernum in bouncelist:
             bouncelist.remove(playernum)
-    else: # bouncing
-        print(f"  player {playernum} is {positions[state]}  bouncing  ")
-        if playernum not in bouncelist:
-            bouncelist.append(playernum)
-    if bouncelist:
-        bounceplayernum=bouncelist[0] # first in list is the soonest to debounce
-        bounceplayer=players[bounceplayernum]
-        bounceend=bounceplayer['lastchg'] + bouncetime
-    else:
-        bounceend=0
-
-    if oldsitnew != player['sitnew']:  # only update lastchg if actual position changed, not when debouncing
-        player['lastchg'] = timenow
-   
-    if oldsit and not player['sit']: # if player was considered sitting, but is now standing, beep
+    if oldstate and not player['sit']: # if player was considered sitting, but is now standing, beep
         beep=True   # beep might already be set, so do not clear it, just set it
     return beep
 
 
 def main():
     '''quiz-controller-text'''
-    global timenow
 
     # setup
     mixer.init()
-    readysound=mixer.Sound("tada-fanfare-a-6313.mp3")
-    readysound.play()
-    time.sleep(1) # give it time to play
-    beepsound=mixer.Sound("beep-2.wav")
-    beepsound.play()
+    sound=mixer.Sound("beep-2.wav")
+    sound.play()
     keys="1234567890!@#$%^&*() \n"
-    max=10 # update keys above if this changes, number of players
-    global readytime  # all players seated for readywait time
-    global players # everything about each player - dict of player objects, key in playernum
-    pin2playernum={}    # dict - key is pin number, value is playernum
+    max=10 # update keys above if this changes
+    players=[]  # everything about each player - list of player objects
     for i in range(max):
-        pin=i
-        keyindex=i
-        playernum=pin+1
-        print(f"player {playernum} is key {keys[keyindex]}")
+        print(f"player {i+1} is key {keys[i]}")
         player={}   # dict obj - all about one player
-        pin2playernum[i]=playernum    
-        player['pin']=pin
-        player['playernum']=playernum
+        player['pin']=i # pin number (playernum = pin + 1)
         player['sit']=True # the debounced state
-        player['enable']=True   # can disable players
+        player['enable']=True
         player['sitnew']=True	# if bouncing, update here and not 'sit', this is the actual state
+        #player['enablenew']=True
         player['lastchg']=0 # used to determine bouncing  (time.monotonic(), timenow)
-        players[playernum]=player # add to dict
-    standlist=[]    # ordered list of playernum that are standing, in the order they stood up
-    standing=-1     # playernum of first player standing, or -1 if none
-    beep=False      # True if any player has just stood up and beep sound has not played yet
+        players.append(player)
+    standlist=[]    # ordered list of players that are standing, in the order they stood up
+    standing=-1
+    beep=False
     notbeep=False # for keyboard override, do not beep
-    bouncelist=[]  # list of playernum in bounce time
-    global bounceend
+    bouncelist=[]  # list of players in bounce time
+    bounceend=0    # end of bounce for first player in bouncelist, or zero if list is empty
+    bounceend=time.monotonic() + bouncechk
     
 
     # main loop
@@ -183,69 +157,83 @@ def main():
                 c=myusb.get_data()
                 if c: # data from controller 
                     s=c.decode()    # bytes to string (utf)
-                    if debug:
-                        print(f" from controller:{c}: ",end="")  ## debug
-                    #m=re.match(r'pin (\d+) (True|False) ([0-9.]+)',s) # controller has a time value, but we do not use it
+                    print(f" from controller:{c}: ",end="")  ## debug
+                    #m=re.match(r'pin (\d+) (True|False) ([0-9.]+)',s)
                     m=re.match(r'pin (\d+) (True|False)',s)
                     if m:
                         pin=int(m[1])
-                        playernum=pin2playernum[pin]
                         state=eval(m[2])
-                        player=players[playernum]
+                        player=players[pin]
                         #print(f" pin {pin} state {state} timenow {timenow} player {player}  ")  # debug
-                        # note - call these even if state is same as previous state
-                        beep=updplayer(state,timenow,beep,player,bouncelist)
-                        standing=chkstand(player['sit'],standlist,player)
+                        if state == player['sitnew']:
+                            print(f' player {pin+1} already {state}')
+                        else:
+                            beep=updplayer(state,timenow,beep,player,bouncelist)
+                            standing=chkstand(player['sit'],standlist,player)
                     else:
                         print(' usb not decoded: ',s)
                 else: # no input, we have time to do other things
-                    # new bounceend with bouncelist
-                    if bounceend and timenow > bounceend:
-                        if debug:
-                            print(f"  debounce  bounceend {bounceend} timenow {timenow}  ")
-                        # just handle the first player each time
-                        playernum=bouncelist[0]
-                        player=players[playernum]
-                        state=player['sitnew']
-                        if debug:
-                            print(f"  player {playernum} debounce to {positions[state]}  ",end="")
-                        beep=updplayer(state,timenow,beep,player,bouncelist)
-                        standing=chkstand(player['sit'],standlist,player)
-
+                    if bounceend > 0 and timenow > bounceend:
+                        bounceend=0
+                        for i in range(max):
+                            player=players[i]
+                            oldstate=player['sit']
+                            if player['sitnew'] != oldstate:    # player in bounce mode and not same as first
+                                if player['lastchg'] + bouncetime < timenow:
+                                    #chgtime=0
+                                    #state=player['sitnew']
+                                    #beep=updplayer(state,chgtime,beep,player,bouncelist)
+                                    
+                                    if timenow > player['lastchg'] + bouncetime:
+                                        state=player['sitnew']
+                                        if state:
+                                            pos="seated"
+                                        else:
+                                            pos="STANDING"
+                                        player['sit']=state
+                                        print(f"  player {player['pin']+1} debounce to {pos}  ",end="")
+                                        chgtime=0
+                                        beep=updplayer(state,chgtime,beep,player,bouncelist)
+                                        standing=chkstand(player['sit'],standlist,player)
+                                    #if oldstate and not player['sit']: # if player was considered sitting, but is now standing, beep
+                                    #    beep=True   # beep might already be set, so do not clear it, just set it
+                                else:
+                                    if bounceend:
+                                        bounceend = min(bounceend,player['lastchg'] + bouncetime)
+                                    else: # bounceend is zero
+                                        bounceend = player['lastchg'] + bouncetime
+                        bounceend=time.monotonic() + bouncechk
                     if beep:
-                        print(" BEEP ")
+                        #print(" BEEP")
                         #print(time.monotonic())
-                        beepsound.play()
+                        sound.play()
                         #print(time.monotonic())
                         beep=False
-                    
-                    if readytime and timenow > readytime:
-                        readytime=0
-                        readysound.play()
-                        print(f" READY ")
-                    
                     time.sleep(.1)  # only sleep if no input
 
                 # print the main output line
                 print("\r",end="")
                 for i in range(max):
+                    player=players[i]
                     playernum=i+1
-                    player=players[playernum]
-                    if player['enable']:
+                    if playernum == standing:
+                        symbol="*"  # the first one standing currently
+                        #elif enable[i]:  
+                    elif player['enable']:
                         if player['sit']:
+                            #if playerstatus[i]:
                             symbol=" "  # seated - number toggles enable
-                        elif playernum == standing:
-                            symbol="*"  # the first one standing currently
                         else:
                             symbol="."  # standing but not first
                     else:
                         symbol="_" # disabled - number toggles enable
                     print(f" {symbol}{playernum}{symbol} ",end="")
-                print(f" time {timenow:9.2f}     stand {standlist} \t bounce {bouncelist}\t {bounceend:9.2f} ",end='')
-                #print(f" stand {standlist} bounce {bouncelist} {bounceend:9.2f} time {timenow:9.2f} ",end='')
-                #print(f'    first: {standing}   standlist: {standlist}   bouncelist: {bouncelist}   ',end="")
-                #print(f"bounceend {bounceend:9.2f}  ",end="")
-                #print(f" timenow {timenow:9.2f}  ",end="")
+                print(f'    first: {standing}   standlist: {standlist}   bouncelist: {bouncelist}   ',end="")
+                #print(f' beep={beep}   ',end="")
+                print(f"bounceend {bounceend}   ",end="")
+                #print(time.clock_gettime_ns(2))
+                print(timenow,end="")
+                #print()
 
                 # read keyboard
                 c=nbc.get_data()
@@ -259,46 +247,40 @@ def main():
                 if c:
                     if j<2*max:
                         if j<max:   # 1-9,0  enable/disable seat
-                            keyindex=j
-                            playernum=keyindex+1
-                            player=players[playernum]
+                            pin=j
+                            player=players[j]
                             # toggle seat enable/disable
                             if player['enable']:
                                 player['enable']=False
                             else:
                                 player['enable']=True
-                            print(f"  player {playernum} enable {player['enable']}  ")
                             standing=chkstand(player['sit'],standlist,player)
+                            #print(f' standlist: {standlist}, standing: {standing}')
                         else: # j<2*max:  # shift 1-9,0 (punctuation) - toggle seat value
-                            keyindex=j-max
-                            playernum=keyindex+1
-                            player=players[playernum]
+                            pin=j-max
+                            print(f' pin {pin} ',end='')   # debug
+                            player=players[pin]
                             # toggle seat value - for testing
                             if player['sit']:
                                 player['sit']=False
                             else:
                                 player['sit']=True
-                            print(f"  player {playernum}  kdb toggle sit {player['sit']}  ")
                             standing=chkstand(player['sit'],standlist,player)
                         state=player['sit']
-                        notbeep=updplayer(state,timenow,notbeep,player,bouncelist)
+                        chgtime=0
+                        notbeep=updplayer(state,chgtime,notbeep,player,bouncelist)
                     elif c==" ": # space = reset
                         for j in range(max):
-                            playernum=j+1
-                            players[playernum]['sit']=True
-                            players[playernum]['sitnew']=True
+                            players[j]['sit']=True
                         standlist=[]
                         standing=-1
-                        bouncelist=[]
-                        bounceend=0
                         print("  reset")
                     elif c=="\n": # enter = show status of each player
                         '''enter is go button'''
+                        #standlist=[]
                         # debug - show player data
-                        print('')
                         for j in range(max):
-                            playernum=j+1
-                            player=players[playernum]
+                            player=players[j]
                             print(player)
                     # can add more keyboard functions above this line
                     else:

@@ -40,3 +40,9 @@ activate
 -[Display on projectors?]
 -~~~
 
+fanfare is from https://pixabay.com/sound-effects/search/tada/
+
+version 4 has debounce working and fanfare for ready  2025-04-26  rharold
+
+
+
